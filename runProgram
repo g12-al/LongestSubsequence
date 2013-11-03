@@ -1,0 +1,35 @@
+#!/bin/bash
+
+make
+make d
+
+
+echo "Type '1' to compare input strings"
+echo "Type '2' to compare generated DNA graphs"
+read userinput
+
+if [ $userinput = '1' ]
+	then
+		echo "Enter a first string for comparison"
+		read string1
+		echo "Enter a second string for comparison"
+		read string2
+
+		echo "Starting program..."
+		./lcs $string1 $string2
+elif [ $userinput = '2' ]
+	then
+		echo "Enter a number of samples for DNA sample 1:"
+		read samplecount1
+		echo "Enter a number of samples for DNA sample 2:"
+		read samplecount2
+
+		./dnagen $samplecount1 dnatemp
+		./dnagen $samplecount2 dnatemp2
+
+		./lcs -f dnatemp dnatemp2
+		rm dnatemp dnatemp2
+		
+		
+fi
+

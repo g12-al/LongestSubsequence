@@ -1,0 +1,352 @@
+
+Stack Exchange sign up  log in  careers 2.0 
+
+
+Stack Overflow
+Questions
+Tags
+Tour
+Users
+Ask Question
+Tell me more × Stack Overflow is a question and answer site for professional and enthusiast programmers. It's 100% free, no registration required.
+Correct way to read a text file into a buffer in C?
+up vote
+4
+down vote
+favorite
+5
+I'm dealing with small text files that i want to read into a buffer while i process them, so i've come up with the following code:
+
+...
+char source[1000000];
+
+FILE *fp = fopen("TheFile.txt", "r");
+if(fp != NULL)
+{
+    while((symbol = getc(fp)) != EOF)
+    {
+        strcat(source, &symbol);
+    }
+    fclose(fp);
+}
+...
+Is this the correct way of putting the contents of the file into the buffer or am i abusing strcat()?
+
+I then iterate through the buffer thus:
+
+for(int x = 0; (c = source[x]) != '\0'; x++)
+{
+    //Process chars
+}
+c input buffer
+share|improve this question
+asked Jan 8 '10 at 16:44
+
+Gary Willoughby
+11.6k1668136
+ 	
+This is wrong. strcat concatenates strings. Even if &symbol is a char *, it is not null-terminated. You should use fgets or fread. Also, strcat is going to be slow in your case anyway because it scans source every time it needs to append one character. –  Alok Singhal Jan 8 '10 at 16:50 
+4	  	
+Yes, you're abusing strcat. Please stop it. Abusing cats is wrong. –  Paul Nathan Jan 8 '10 at 16:55
+ 	
+Not to mention reading a char at a time will be much slower than using fread. –  Nick Meyer Jan 8 '10 at 16:57
+ 	
+@Nick: I don't know about 'much slower': because of io buffering and possibly inlining of the function calls, the performance impact needs not necessarily be that large; using fread() is still a good idea, though –  Christoph Jan 8 '10 at 17:07
+ 	
+btw: I wouldn't consider a 1m text file 'small' ;) –  Christoph Jan 8 '10 at 17:09
+show 3 more comments
+7 Answers
+activeoldestvotes
+up vote
+16
+down vote
+accepted
+char source[1000000];
+
+FILE *fp = fopen("TheFile.txt", "r");
+if(fp != NULL)
+{
+    while((symbol = getc(fp)) != EOF)
+    {
+        strcat(source, &symbol);
+    }
+    fclose(fp);
+}
+There are quite a few things wrong with this code:
+
+It is very slow (you are extracting the buffer one character at a time).
+If the filesize is over sizeof(source), this is prone to buffer overflows.
+Really, when you look at it more closely, this code should not work at all. As stated in the man pages:
+The strcat() function appends a copy of the null-terminated string s2 to the end of the null-terminated string s1, then add a terminating `\0'.
+
+You are appending a character (not a NUL-terminated string!) to a string that may or may not be NUL-terminated. The only time I can imagine this working according to the man-page description is if every character in the file is NUL-terminated, in which case this would be rather pointless. So yes, this is most definitely a terrible abuse of strcat().
+
+The following are two alternatives to consider using instead.
+
+If you know the maximum buffer size ahead of time:
+
+#include <stdio.h>
+#define MAXBUFLEN 1000000
+
+char source[MAXBUFLEN + 1];
+FILE *fp = fopen("foo.txt", "r");
+if (fp != NULL) {
+    size_t newLen = fread(source, sizeof(char), MAXBUFLEN, fp);
+    if (newLen == 0) {
+        fputs("Error reading file", stderr);
+    } else {
+        source[++newLen] = '\0'; /* Just to be safe. */
+    }
+
+    fclose(fp);
+}
+Or, if you do not:
+
+#include <stdio.h>
+#include <stdlib.h>
+
+char *source = NULL;
+FILE *fp = fopen("foo.txt", "r");
+if (fp != NULL) {
+    /* Go to the end of the file. */
+    if (fseek(fp, 0L, SEEK_END) == 0) {
+        /* Get the size of the file. */
+        long bufsize = ftell(fp);
+        if (bufsize == -1) { /* Error */ }
+
+        /* Allocate our buffer to that size. */
+        source = malloc(sizeof(char) * (bufsize + 1));
+
+        /* Go back to the start of the file. */
+        if (fseek(fp, 0L, SEEK_SET) == 0) { /* Error */ }
+
+        /* Read the entire file into memory. */
+        size_t newLen = fread(source, sizeof(char), bufsize, fp);
+        if (newLen == 0) {
+            fputs("Error reading file", stderr);
+        } else {
+            source[++newLen] = '\0'; /* Just to be safe. */
+        }
+    }
+    fclose(fp);
+}
+
+free(source); /* Don't forget to call free() later! */
+share|improve this answer
+edited Jan 8 '10 at 21:57
+
+answered Jan 8 '10 at 17:03
+
+Michael
+1,50821631
+1	  	
+You probably want to null-terminate your buffer as well. In your second code sample, you left room for the null, but didn't actually set it; in your first, you neglected to leave room for the null. –  Brian Campbell Jan 8 '10 at 17:10
+ 	
+@Brian: That's true, I've updated the examples with that in mind. –  Michael Jan 8 '10 at 17:16
+ 	
++1 for the use of ftell and malloc. This is the way to go. –  Coleman Jan 8 '10 at 17:25
+ 	
+Even if every character is NUL terminated in the file, this wouldn't work. The question is whether the pointer &symbol is 0-terminated. –  Alok Singhal Jan 8 '10 at 17:30
+1	  	
+stackoverflow.com/a/238607/309483: "If you use ftell, then you must open the file in binary mode. If you open it in text mode, ftell only returns a "cookie" that is only usable by fseek." –  Janus Troelsen Oct 18 '12 at 22:16
+show 6 more comments
+up vote
+3
+down vote
+Yes - you would probably be arrested for your terriable abuse of strcat !
+
+Take a look at getline() it reads the data a line at a time but importantly it can limit the number of characters you read, so you don't overflow the buffer.
+
+Strcat is relatively slow because it has to search the entire string for the end on every character insertion. You would normally keep a pointer to the current end of the string storage and pass that to getline as the position to read the next line into.
+
+share|improve this answer
+edited Jan 8 '10 at 16:52
+
+answered Jan 8 '10 at 16:46
+
+Martin Beckett
+56.2k786168
+ 	
+What's the alternative? –  Gary Willoughby Jan 8 '10 at 16:47
+up vote
+1
+down vote
+Why don't you just use the array of chars you have? This ought to do it:
+
+   source[i] = getc(fp); 
+   i++;
+share|improve this answer
+answered Jan 8 '10 at 16:51
+
+Martin Wickman
+8,07732945
+up vote
+0
+down vote
+See this article from JoelOnSoftware for why you don't want to use strcat.
+
+Look at fread for an alternative. Use it with 1 for the size when you're reading bytes or characters.
+
+share|improve this answer
+answered Jan 8 '10 at 16:48
+
+Mark Ransom
+114k995232
+ 	
+Good article... –  Gary Willoughby Jan 8 '10 at 17:06
+up vote
+0
+down vote
+Methinks you want fread:
+
+http://www.cplusplus.com/reference/clibrary/cstdio/fread/
+
+share|improve this answer
+answered Jan 8 '10 at 16:49
+
+wprl
+5,02162041
+up vote
+0
+down vote
+Not tested, but should work.. And yes, it could be better implemented with fread, I'll leave that as an exercise to the reader.
+
+#define DEFAULT_SIZE 100
+#define STEP_SIZE 100
+
+char *buffer[DEFAULT_SIZE];
+size_t buffer_sz=DEFAULT_SIZE;
+size_t i=0;
+while(!feof(fp)){
+  buffer[i]=fgetc(fp);
+  i++;
+  if(i>=buffer_sz){
+    buffer_sz+=STEP_SIZE;
+    void *tmp=buffer;
+    buffer=realloc(buffer,buffer_sz);
+    if(buffer==null){ free(tmp); exit(1);} //ensure we don't have a memory leak
+  }
+}
+buffer[i]=0;
+share|improve this answer
+answered Jan 8 '10 at 17:11
+
+Earlz
+17k19101267
+up vote
+0
+down vote
+Have you considered mmap()? You can read from the file directly as if it were already in memory.
+
+http://beej.us/guide/bgipc/output/html/multipage/mmap.html
+
+share|improve this answer
+answered Jan 8 '10 at 17:44
+
+Ioan
+1,579718
+Your Answer
+
+ 
+Sign up or login
+
+Sign up using Google
+Sign up using Facebook
+Sign up using Stack Exchange
+Post as a guest
+
+Name
+
+Email
+
+ 
+By posting your answer, you agree to the privacy policy and terms of service.
+
+Not the answer you're looking for?	 Browse other questions tagged c input buffer or ask your own question.
+tagged
+c × 113933
+input × 8591
+buffer × 2199
+asked
+3 years ago
+viewed
+12870 times
+active
+3 years ago
+Web Developer (French New Media) / Développeur Web…
+CBC/Radio-Canada
+Montreal, QC, Canada
+Intermediate Web Developer
+Stockpools
+Vancouver, BC, Canada
+QA Team Lead
+E-xact Transactions
+Vancouver, BC, Canada / remote
+More jobs near Vancouver...
+Linked
+131 How can I get a file's size in C?
+0 Trying to read a file into a char array
+1 How can I return file contents from a function?
+Related
+0 I must be running into a buffer limit somewhere receiving data from TCP socket using recv( )
+3 C - Read Directly From the Keyboard Buffer
+1 Reading text into a buffer in c. (leaves out the last line of data when there is no newline on the textfile)
+0 C - Reading from stdin as characters are typed
+1 fgetc,getc causes the program to crash when reading from text file
+0 Strange issue while trying to read from a file with fgets()
+0 Read binary file, save in buffer, print out content of buffer
+0 How is input parsed in C?
+0 Long spacing after loading buffer from text file
+0 Error in getting the size of the text file into Buffer
+question feed
+about help badges blog chat data legal privacy policy jobs advertising info mobile contact us feedback
+TECHNOLOGY	 LIFE / ARTS	 CULTURE / RECREATION	 SCIENCE	 OTHER
+Stack Overflow
+Server Fault
+Super User
+Web Applications
+Ask Ubuntu
+Webmasters
+Game Development
+TeX - LaTeX
+Programmers
+Unix & Linux
+Ask Different (Apple)
+WordPress Answers
+Geographic Information Systems
+Electrical Engineering
+Android Enthusiasts
+Information Security
+Database Administrators
+Drupal Answers
+SharePoint
+User Experience
+Mathematica
+more (14)
+Photography
+Science Fiction & Fantasy
+Seasoned Advice (cooking)
+Home Improvement
+more (13)
+English Language & Usage
+Skeptics
+Mi Yodeya (Judaism)
+Travel
+Christianity
+Arqade (gaming)
+Bicycles
+Role-playing Games
+more (21)
+Mathematics
+Cross Validated (stats)
+Theoretical Computer Science
+Physics
+MathOverflow
+more (7)
+Stack Apps
+Meta Stack Overflow
+Area 51
+Stack Overflow Careers
+site design / logo © 2013 stack exchange inc; user contributions licensed under cc-wiki with attribution required
+rev 2013.11.1.1112
+
